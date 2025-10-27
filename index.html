@@ -52,7 +52,7 @@
             <input
                 type="text"
                 id="usernameInput"
-                placeholder="Enter Username (e.g., notch)"
+                placeholder="Enter Username (e.g., steve)"
                 minlength="3"
                 maxlength="16"
                 class="flex-grow p-3 rounded-xl border-2 border-gray-300 focus:border-mc-green focus:ring-mc-green transition duration-200 shadow-inner text-mc-dark"
@@ -78,20 +78,32 @@
     </div>
 
     <script>
-        const API_URL = "https://api.mojang.com/users/profiles/minecraft/";
+        // --- START OF CRITICAL FIX ---
+
+        // The original API endpoint we want to hit
+        const MOJANG_API_BASE = "https://api.mojang.com/users/profiles/minecraft/";
+        
+        // FIX: Using the allorigins proxy which is generally more reliable for GitHub Pages
+        const CORS_PROXY = "https://api.allorigins.win/raw?url=";
+
+        // --- END OF CRITICAL FIX ---
+
+
         const resultContainer = document.getElementById('resultContainer');
         const resultText = document.getElementById('resultText');
         const usernameInput = document.getElementById('usernameInput');
         const checkButton = document.getElementById('checkButton');
 
-        // Utility function for exponential backoff retry logic
+        /**
+         * Utility function for exponential backoff retry logic.
+         */
         const fetchWithRetry = async (url, options = {}, retries = 3) => {
             for (let i = 0; i < retries; i++) {
                 try {
                     const response = await fetch(url, options);
                     // Check for rate limiting (429) or other retry-worthy errors
                     if (response.status === 429 && i < retries - 1) {
-                        const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                        const delay = Math.pow(2, i) * 1000 + Math.random() * 500;
                         console.warn(`Rate limit hit (429). Retrying in ${delay / 1000}s...`);
                         await new Promise(resolve => setTimeout(resolve, delay));
                         continue;
@@ -100,7 +112,7 @@
                 } catch (error) {
                     console.error("Fetch error:", error);
                     if (i < retries - 1) {
-                        const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                        const delay = Math.pow(2, i) * 1000 + Math.random() * 500;
                         console.warn(`Fetch failed. Retrying in ${delay / 1000}s...`);
                         await new Promise(resolve => setTimeout(resolve, delay));
                         continue;
@@ -116,10 +128,16 @@
             const username = usernameInput.value.trim();
 
             // 1. Basic Validation
-            if (username.length < 3 || username.length > 16) {
-                updateResult('Please enter a username between 3 and 16 characters.', 'text-mc-red font-semibold', 'border-mc-red');
+            if (username.length < 3 || username.length > 16 || !/^[a-zA-Z0-9_]+$/.test(username)) {
+                updateResult('Invalid username: Must be 3-16 alphanumeric characters (A-z, 0-9) or underscores.', 'text-mc-red font-semibold', 'border-mc-red');
                 return;
             }
+
+            // Construct the full URL: Proxy URL + Mojang URL (encoded)
+            // THIS IS THE LINE THAT NOW USES THE PROXY!
+            const mojangUrl = MOJANG_API_BASE + username;
+            const fullApiUrl = CORS_PROXY + encodeURIComponent(mojangUrl);
+
 
             // 2. UI preparation for loading state
             resultText.innerHTML = '<span class="animate-pulse">Checking availability...</span>';
@@ -130,7 +148,7 @@
 
             try {
                 // 3. API Call
-                const response = await fetchWithRetry(`${API_URL}${username}`);
+                const response = await fetchWithRetry(fullApiUrl);
 
                 // 4. Handle Responses
                 if (response.status === 200) {
@@ -148,16 +166,16 @@
                         'border-mc-green'
                     );
                 } else if (response.status === 400) {
-                    // Status 400 (Bad Request) often indicates an invalid format
+                    // Status 400 (Bad Request) could be for invalid format not caught by client-side validation
                      updateResult(
-                        'Invalid username format. Must contain 3-16 alphanumeric characters and underscores.',
+                        'Bad Request. The API did not accept the username format.',
                         'text-mc-red font-semibold',
                         'border-mc-red'
                     );
                 } else if (response.status === 429) {
                     // Status 429 (Too Many Requests - Rate Limit)
                     updateResult(
-                        'Rate Limit Exceeded. Please wait a moment and try again.',
+                        'Rate Limit Exceeded. Mojang is currently limiting requests. Please wait 1-2 minutes and try again.',
                         'text-yellow-600 font-semibold',
                         'border-yellow-600'
                     );
@@ -174,7 +192,7 @@
             } catch (error) {
                 console.error("Critical error during username check:", error);
                 updateResult(
-                    'Network Error. Could not connect to the Minecraft API.',
+                    'Network Error. Failed to reach the proxy service or Mojang API.',
                     'text-mc-red font-semibold',
                     'border-mc-red'
                 );
@@ -198,7 +216,7 @@
             resultText.innerHTML = htmlMessage;
             resultText.className = `text-center ${textClass}`;
 
-            resultContainer.classList.remove('border-gray-500', 'border-mc-green', 'border-mc-red');
+            resultContainer.classList.remove('border-gray-500', 'border-mc-green', 'border-mc-red', 'border-yellow-600');
             resultContainer.classList.add(borderClass);
 
             document.getElementById('statusHint').classList.remove('hidden');

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft Username Availability Checker (Mcuuid API)</title>
+    <style>
+        /* ... (CSS remains the same for styling) ... */
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            padding: 20px; 
+            background-color: #f4f4f9;
+            color: #333;
+            text-align: center;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #4CAF50;
+            margin-bottom: 25px;
+        }
+        input[type="text"] {
+            padding: 10px;
+            margin-right: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            width: 60%;
+            font-size: 16px;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #result { 
+            margin-top: 25px; 
+            font-weight: bold; 
+            padding: 15px;
+            border-radius: 5px;
+            font-size: 1.1em;
+            min-height: 20px;
+        }
+        .available { 
+            color: white; 
+            background-color: #28a745;
+        }
+        .taken { 
+            color: white; 
+            background-color: #dc3545;
+        }
+        .checking {
+            color: #007bff;
+            background-color: #e9ecef;
+        }
+        .error {
+            color: white;
+            background-color: #ffc107;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Minecraft Username Checker ⛏️</h1>
+
+        <input type="text" id="usernameInput" placeholder="Enter Minecraft Username" required>
+        <button onclick="checkUsername()">Check</button>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        /**
+         * Checks the availability using the Mcuuid API endpoint.
+         * This API is stable and uses standard 200/404 codes for existence.
+         */
+        function checkUsername() {
+            const username = document.getElementById('usernameInput').value.trim();
+            const resultDiv = document.getElementById('result');
+
+            // Client-Side Validation (Important for preventing 422/400 errors)
+            if (username.length < 3 || username.length > 16) {
+                resultDiv.className = 'error';
+                resultDiv.innerHTML = '⚠️ Username must be between 3 and 16 characters.';
+                return;
+            }
+
+            resultDiv.className = 'checking';
+            resultDiv.innerHTML = `⏳ Checking username: "${username}"...`;
+            
+            // Mcuuid API endpoint
+            const apiUrl = 'https://api.mojang.com/users/profiles/minecraft/' + username;
+
+            fetch(apiUrl)
+                .then(response => {
+                    // Log the status for debugging
+                    console.log(`Mcuuid API Response Status for ${username}: ${response.status}`);
+                    
+                    const name = username; 
+
+                    if (response.status === 200) {
+                        // Status 200: Profile found, name is TAKEN
+                        resultDiv.className = 'taken';
+                        resultDiv.innerHTML = `❌ Username "${name}" is **TAKEN**.`;
+                        
+                    } else if (response.status === 404) {
+                        // Status 404: Profile not found, name is AVAILABLE
+                        resultDiv.className = 'available';
+                        resultDiv.innerHTML = `✅ Username "${name}" is **AVAILABLE**!`;
+                        
+                    } else if (response.status === 400) {
+                        // Status 400: Malformed request or other client error
+                        resultDiv.className = 'error';
+                        resultDiv.innerHTML = `Username "${name}" is **invalid** (Status 400).`;
+
+                    } else {
+                        // Handle unexpected status codes
+                        resultDiv.className = 'error';
+                        resultDiv.innerHTML = `🚨 Error: Unexpected status ${response.status}. Try checking your console (F12).`;
+                    }
+                })
+                .catch(error => {
+                    console.error('Fetch Error Details:', error);
+                    resultDiv.className = 'error';
+                    resultDiv.innerHTML = '🌐 **Network Error:** Could not connect to the API. Check your VPN/Proxy.';
+                });
+        }
+    </script>
+</body>
+</html>

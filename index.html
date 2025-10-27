@@ -3,140 +3,214 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Minecraft Username Availability Checker (Mcuuid API)</title>
+    <title>Minecraft Username Checker</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        'mc-green': '#3E8941',
+                        'mc-dark': '#1F1F1F',
+                        'mc-light': '#EFEFEF',
+                        'mc-red': '#C43030',
+                    }
+                }
+            }
+        }
+    </script>
     <style>
-        /* CSS for styling the checker */
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            padding: 20px; 
-            background-color: #f4f4f9;
-            color: #333;
-            text-align: center;
+        /* Custom scrollbar styling for a cleaner look */
+        ::-webkit-scrollbar {
+            width: 8px;
         }
-        .container {
-            max-width: 500px;
-            margin: 0 auto;
-            background: #fff;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        ::-webkit-scrollbar-thumb {
+            background-color: #3E8941;
+            border-radius: 4px;
         }
-        h1 {
-            color: #4CAF50;
-            margin-bottom: 25px;
-        }
-        input[type="text"] {
-            padding: 10px;
-            margin-right: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            width: 60%;
-            font-size: 16px;
-        }
-        button {
-            padding: 10px 15px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            transition: background-color 0.3s;
-        }
-        button:hover {
-            background-color: #45a049;
-        }
-        #result { 
-            margin-top: 25px; 
-            font-weight: bold; 
-            padding: 15px;
-            border-radius: 5px;
-            font-size: 1.1em;
-            min-height: 20px;
-        }
-        .available { 
-            color: white; 
-            background-color: #28a745;
-        }
-        .taken { 
-            color: white; 
-            background-color: #dc3545;
-        }
-        .checking {
-            color: #007bff;
-            background-color: #e9ecef;
-        }
-        .error {
-            color: white;
-            background-color: #ffc107;
+        ::-webkit-scrollbar-track {
+            background-color: #1F1F1F;
         }
     </style>
 </head>
-<body>
+<body class="bg-mc-dark min-h-screen flex items-center justify-center p-4 font-sans">
+    <div class="w-full max-w-lg bg-mc-light rounded-2xl shadow-2xl p-6 md:p-8">
+        <h1 class="text-3xl font-extrabold text-mc-dark mb-2 flex items-center">
+            <svg class="w-8 h-8 mr-2 text-mc-green" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" />
+            </svg>
+            MC Name Checker
+        </h1>
+        <p class="text-gray-600 mb-6">Check the availability of a Minecraft Java Edition username.</p>
 
-    <div class="container">
-        <h1>Minecraft Username Checker ⛏️</h1>
+        <!-- Input and Button -->
+        <div class="flex flex-col sm:flex-row gap-4 mb-6">
+            <input
+                type="text"
+                id="usernameInput"
+                placeholder="Enter Username (e.g., notch)"
+                minlength="3"
+                maxlength="16"
+                class="flex-grow p-3 rounded-xl border-2 border-gray-300 focus:border-mc-green focus:ring-mc-green transition duration-200 shadow-inner text-mc-dark"
+            />
+            <button
+                id="checkButton"
+                onclick="checkUsernameAvailability()"
+                class="bg-mc-green text-white font-bold py-3 px-6 rounded-xl hover:bg-opacity-90 active:scale-[0.98] transition duration-150 shadow-md hover:shadow-lg focus:outline-none focus:ring-4 focus:ring-mc-green focus:ring-opacity-50"
+            >
+                Check
+            </button>
+        </div>
 
-        <input type="text" id="usernameInput" placeholder="Enter Minecraft Username" required>
-        <button onclick="checkUsername()">Check</button>
-
-        <div id="result"></div>
+        <!-- Result Container -->
+        <div id="resultContainer" class="min-h-[100px] border border-gray-300 bg-white rounded-xl p-4 shadow-inner flex flex-col justify-center transition-all duration-300">
+            <p id="resultText" class="text-gray-500 italic text-center">
+                Enter a name above to check its status.
+            </p>
+            <p id="statusHint" class="text-xs mt-2 text-center text-gray-400">
+                Status is based on the official Mojang/Microsoft API.
+            </p>
+        </div>
     </div>
 
     <script>
-        /**
-         * Checks the availability using the Mcuuid API endpoint.
-         * Status 200 = TAKEN (Profile found)
-         * Status 404 = AVAILABLE (Profile not found)
-         */
-        function checkUsername() {
-            const username = document.getElementById('usernameInput').value.trim();
-            const resultDiv = document.getElementById('result');
+        const API_URL = "https://api.mojang.com/users/profiles/minecraft/";
+        const resultContainer = document.getElementById('resultContainer');
+        const resultText = document.getElementById('resultText');
+        const usernameInput = document.getElementById('usernameInput');
+        const checkButton = document.getElementById('checkButton');
 
-            // Client-Side Validation (Required 3-16 chars)
+        // Utility function for exponential backoff retry logic
+        const fetchWithRetry = async (url, options = {}, retries = 3) => {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    // Check for rate limiting (429) or other retry-worthy errors
+                    if (response.status === 429 && i < retries - 1) {
+                        const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                        console.warn(`Rate limit hit (429). Retrying in ${delay / 1000}s...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        continue;
+                    }
+                    return response;
+                } catch (error) {
+                    console.error("Fetch error:", error);
+                    if (i < retries - 1) {
+                        const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                        console.warn(`Fetch failed. Retrying in ${delay / 1000}s...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        continue;
+                    }
+                    throw error;
+                }
+            }
+            throw new Error("Failed to fetch after multiple retries.");
+        };
+
+
+        async function checkUsernameAvailability() {
+            const username = usernameInput.value.trim();
+
+            // 1. Basic Validation
             if (username.length < 3 || username.length > 16) {
-                resultDiv.className = 'error';
-                resultDiv.innerHTML = '⚠️ Username must be between 3 and 16 characters.';
+                updateResult('Please enter a username between 3 and 16 characters.', 'text-mc-red font-semibold', 'border-mc-red');
                 return;
             }
 
-            resultDiv.className = 'checking';
-            resultDiv.innerHTML = `⏳ Checking username: "${username}"...`;
-            
-            // Mcuuid API endpoint
-            const apiUrl = 'https://api.mcuuid.com/api/username/uuid/' + username;
+            // 2. UI preparation for loading state
+            resultText.innerHTML = '<span class="animate-pulse">Checking availability...</span>';
+            resultContainer.classList.remove('border-mc-green', 'border-mc-red');
+            resultContainer.classList.add('border-gray-500');
+            checkButton.disabled = true;
+            checkButton.textContent = 'Checking...';
 
-            fetch(apiUrl)
-                .then(response => {
-                    const name = username; 
+            try {
+                // 3. API Call
+                const response = await fetchWithRetry(`${API_URL}${username}`);
 
-                    if (response.status === 200) {
-                        // TAKEN
-                        resultDiv.className = 'taken';
-                        resultDiv.innerHTML = `❌ Username "${name}" is **TAKEN**.`;
-                        
-                    } else if (response.status === 404) {
-                        // AVAILABLE
-                        resultDiv.className = 'available';
-                        resultDiv.innerHTML = `✅ Username "${name}" is **AVAILABLE**!`;
-                        
-                    } else if (response.status === 400) {
-                        // Invalid format
-                        resultDiv.className = 'error';
-                        resultDiv.innerHTML = `Username "${name}" is **invalid** (Status 400).`;
+                // 4. Handle Responses
+                if (response.status === 200) {
+                    // Status 200 means a profile was found, so the name is TAKEN.
+                    updateResult(
+                        `'${username}' is **TAKEN**!`,
+                        'text-mc-red font-bold text-xl',
+                        'border-mc-red'
+                    );
+                } else if (response.status === 204) {
+                    // Status 204 (No Content) means no profile was found, so the name is AVAILABLE.
+                    updateResult(
+                        `🎉 '${username}' is **AVAILABLE!**`,
+                        'text-mc-green font-bold text-xl',
+                        'border-mc-green'
+                    );
+                } else if (response.status === 400) {
+                    // Status 400 (Bad Request) often indicates an invalid format
+                     updateResult(
+                        'Invalid username format. Must contain 3-16 alphanumeric characters and underscores.',
+                        'text-mc-red font-semibold',
+                        'border-mc-red'
+                    );
+                } else if (response.status === 429) {
+                    // Status 429 (Too Many Requests - Rate Limit)
+                    updateResult(
+                        'Rate Limit Exceeded. Please wait a moment and try again.',
+                        'text-yellow-600 font-semibold',
+                        'border-yellow-600'
+                    );
+                }
+                else {
+                    // General unexpected error
+                    updateResult(
+                        `Error: Could not check status (Status Code: ${response.status}). Try again later.`,
+                        'text-mc-red font-semibold',
+                        'border-mc-red'
+                    );
+                }
 
-                    } else {
-                        // Unexpected status
-                        resultDiv.className = 'error';
-                        resultDiv.innerHTML = `🚨 Error: Unexpected status ${response.status}.`;
-                    }
-                })
-                .catch(error => {
-                    // This error should NO LONGER happen on GitHub Pages
-                    resultDiv.className = 'error';
-                    resultDiv.innerHTML = '🌐 Network Error. (If hosted publicly, this indicates an API issue).';
-                });
+            } catch (error) {
+                console.error("Critical error during username check:", error);
+                updateResult(
+                    'Network Error. Could not connect to the Minecraft API.',
+                    'text-mc-red font-semibold',
+                    'border-mc-red'
+                );
+            } finally {
+                // 5. Restore UI state
+                checkButton.disabled = false;
+                checkButton.textContent = 'Check';
+            }
         }
+
+        /**
+         * Updates the result box with the appropriate message and styling.
+         * @param {string} message - The HTML message to display.
+         * @param {string} textClass - Tailwind class for text color/weight.
+         * @param {string} borderClass - Tailwind class for border color.
+         */
+        function updateResult(message, textClass, borderClass) {
+            // Use innerHTML and a regex replacement to allow bold formatting via markdown
+            const htmlMessage = message.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+            resultText.innerHTML = htmlMessage;
+            resultText.className = `text-center ${textClass}`;
+
+            resultContainer.classList.remove('border-gray-500', 'border-mc-green', 'border-mc-red');
+            resultContainer.classList.add(borderClass);
+
+            document.getElementById('statusHint').classList.remove('hidden');
+        }
+
+        // Allow pressing Enter in the input field to trigger the check
+        usernameInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                checkUsernameAvailability();
+            }
+        });
+
     </script>
 </body>
 </html>

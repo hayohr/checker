@@ -274,21 +274,27 @@
 
             try {
                 // Using CORS proxy to bypass CORS restrictions
-                const response = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://api.mojang.com/users/profiles/minecraft/${username}`)}`);
+                const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(`https://api.mojang.com/users/profiles/minecraft/${username}`)}`);
                 
                 loader.classList.remove('active');
                 checkBtn.disabled = false;
 
-                const text = await response.text();
+                const data = await response.json();
+                const mojangResponse = data.contents;
                 
-                // If we get a valid JSON response, the username is taken
-                if (text && text.trim() && text !== 'null') {
+                // Check if we got a valid response with user data
+                if (mojangResponse && mojangResponse.trim() && mojangResponse !== 'null' && mojangResponse !== '') {
                     try {
-                        JSON.parse(text);
-                        showResult(`❌ Username "${username}" is taken`, 'taken');
-                        addToHistory(username, false);
+                        const userData = JSON.parse(mojangResponse);
+                        if (userData && userData.id) {
+                            showResult(`❌ Username "${username}" is taken`, 'taken');
+                            addToHistory(username, false);
+                        } else {
+                            showResult(`✅ Username "${username}" is available!`, 'available');
+                            addToHistory(username, true);
+                        }
                     } catch {
-                        // Empty or null response means available
+                        // If parsing fails, username is likely available
                         showResult(`✅ Username "${username}" is available!`, 'available');
                         addToHistory(username, true);
                     }
